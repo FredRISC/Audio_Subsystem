@@ -2,6 +2,34 @@
 
 import dsp_pkg::*;
 
+/*
+The System Architecture
+
+Imagine this subsystem sitting between 4 High-Speed ADCs and the main SoC DDR Memory Interconnect.
+
+    Clocking & Reset (The Foundation)
+
+        RDC (Reset Domain Crossing): The external asynchronous pad_rst_n arrives and is safely synchronized into two separate reset trees: sys_rst_n and adc_rst_n.
+
+        Clock Divider: A high-speed 500 MHz PLL clock is divided down. We need a Divide-by-5 circuit with a 50% duty cycle to generate the 100 MHz sys_clk for the AXI bus.
+
+    Data Ingestion & CDC (The Analog Boundary)
+
+        4x I2S Receivers: Four independent interfaces capture serialized audio from the ADCs.
+
+        4x Async FIFOs: The deserialized data is pushed into four independent Asynchronous FIFOs to cross safely from the ADC clock domains into the sys_clk domain.
+
+    Arbitration (The Traffic Cop)
+
+        Round-Robin Arbiter: The 4 FIFOs will assert a not_empty request flag. The arbiter uses a Round-Robin scheme to grant access to one channel at a time, preventing any single high-speed ADC from starving the others.
+
+    The AXI4 DMA Engine (The SoC Interface)
+
+        The DMA engine takes the granted audio sample and formats it into an AXI4 Memory-Mapped transaction.
+
+        It manages the AW (Address Write) channel to specify the DDR memory destination, the W (Write Data) channel to burst the audio payload, and the B (Write Response) channel to confirm the data was stored safely.
+*/
+
 module Audio_SoC_top #(    
     //parameter SYSTEM_BUS_WIDTH      = 32,
     //parameter IS2_WORD_LENGTH       = 16,
@@ -50,7 +78,7 @@ module Audio_SoC_top #(
     // =========================================================================
     logic rst_power_n, rst_bus_n, rst_core_n, rst_adc_n;
     
-    reset_sequencer u_rst_seq (
+    Reset_Sequencer u_rst_seq (
         .pll_clk(pll_clk),
         .rst_n(pad_rst_n),
         .rst_power_n(rst_power_n),
@@ -60,7 +88,7 @@ module Audio_SoC_top #(
     );
 
     logic sys_clk;
-    freq_divider_5 u_clk_div (
+    Freq_Divider_5 u_clk_div (
         .pll_clk(pll_clk),
         .rst_pll_n(rst_power_n),
         .sys_clk(sys_clk) // Fast domain for DMA/Bus
@@ -80,7 +108,7 @@ module Audio_SoC_top #(
             logic left_valid, right_valid;
             
             // A. four I2S Deserializers
-            I2S_DESERIALIZER #(
+            I2S_Deserializer #(
                 SYSTEM_BUS_WIDTH = SYSTEM_BUS_WIDTH,
                 WORD_LENGTH = IS2_WORD_LENGTH
             ) u_i2s_rx (
@@ -98,7 +126,7 @@ module Audio_SoC_top #(
             logic signed [15:0] calibrated_left;
             logic calibrated_left_valid, mux_gnd_left, cal_done_left;
 
-            ADC_DC_OFFSET_CALIBRATION #(
+            ADC_DC_Offset_Calibrator #(
                 NUMBER_OF_SAMPLE = CALIBRATED_SAMPLES
             ) u_dc_cal_left (
                 .clk(i2s_bclk),
@@ -116,7 +144,7 @@ module Audio_SoC_top #(
             logic signed [15:0] calibrated_right;
             logic calibrated_right_valid, mux_gnd_right, cal_done_right;
 
-            ADC_DC_OFFSET_CALIBRATION #(
+            ADC_DC_Offset_Calibrator #(
                 NUMBER_OF_SAMPLE = CALIBRATED_SAMPLES // 16
             ) u_dc_cal_right (
                 .clk(i2s_bclk),
@@ -166,7 +194,7 @@ module Audio_SoC_top #(
     // =========================================================================
     // 3. Arbitration and AXI4 DMA Engine (System Domain)
     // =========================================================================
-    AXI4_DMA_MASTER u_dma (
+    AXI4_DMA_Master u_dma (
         .sys_clk(sys_clk),
         .rst_core_n(rst_core_n),
         .read_burst_ready_in(read_burst_ready),

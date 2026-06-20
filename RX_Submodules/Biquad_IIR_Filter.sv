@@ -10,15 +10,14 @@ Difference Equation: y[n] = (B0 * x[n]) + (B1 * x[n-1]) + (B2 * x[n-2]) - (A1 * 
 */
 
 
-`timescale 1ps/1ps
-
-import general_pkg::*
+`timescale 1nns/1ps
 
 module Biquad_IIR_Filter #(
-    parameter int SCALING_FACTOR = 14;
-    parameter signed [15:0] B0 = 16'sd551;
-    parameter signed [15:0] B1 = 16'sd1101;
-    parameter signed [15:0] B2 = 16'sd551;
+    parameter int DATA_WIDTH = 16,
+    parameter int SCALING_FACTOR = 14,
+    parameter signed [15:0] B0 = 16'sd551,
+    parameter signed [15:0] B1 = 16'sd1101,
+    parameter signed [15:0] B2 = 16'sd551,
     parameter signed [31:0] A1 = 32'sd(-24959); // -1.5234 * 16384 (<<< 14)
     parameter signed [15:0] A2 = 16'sd10777;    //  0.6578 * 16384
 )

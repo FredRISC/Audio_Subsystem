@@ -1,26 +1,4 @@
-/* Waveform
-ClkA (快)   : __|~|______________________ (脈衝進來)
-Toggle_out  : ____|~~~~~~~~~~~~~~~~~~~~~~ (變成長期電位，絕對不會漏)
-
-ClkB (慢)   : ____|~~~~|____|~~~~|____|~~
-FF1 (同步1) : _________|~~~~|____|____|__ (可能亞穩態，被隔離)
-FF2 (同步2) : ______________|~~~~|____|__ (安全的電位變化)
-FF3 (延遲一拍): _________________|~~~~|__ (舊的電位狀態)
-
-XOR (FF2^FF3): ______________|~|_________ (只有一週期不同，成功還原脈衝！)
-
-
-/// Another Illustration
-[ Clk A 域 ]                    [ Clk B 域 ]
-PulseIn ---> [Toggle FF] ----> [FF 1] ---> [FF 2] ---> [FF 3]
-
-                                              |           |
-                                              +-->(XOR)---+---> PulseOut
-*/
-
-`timescale 1ps/1ps
-
-module pulse_synchronizer(
+module CDC_Pulse_Sync(
     input clkA,
     input clkB,
     input rst_n,

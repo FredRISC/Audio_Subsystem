@@ -8,7 +8,7 @@ module dft_clean_module (
     input  wire        data_in,
     output wire        data_out,
 
-    // DFT Interfaces (子模組內只保留 Reset 和 RAM 需要的 MUX)
+    // DFT Interfaces
     input  wire        scan_mode,   // 1: Shift/Test mode, 0: Normal mode
     input  wire        scan_rst_n   // External test reset from ATE
 ); 
@@ -20,7 +20,6 @@ module dft_clean_module (
     (* async_reg = "true" *) reg rst_out_n;
     wire rst_mux_n;
 
-    // 子模組內仍需要單獨處理 Reset，因為 rst_n 是獨立進來的
     assign rst_mux_n = scan_mode ? scan_rst_n : rst_n;
 
     always_ff @(posedge clk or negedge rst_mux_n) begin
