@@ -1,13 +1,13 @@
 `timescale 1ns/1ps
 
-module data_count_aware_async_fifo #(
-    parameter DATA_WIDTH = 32,  // 32-bit data
+module Async_FIFO #(
+    parameter DATA_WIDTH = 16,  // 16-bit data
     parameter FIFO_DEPTH = 16
 )
 (
     input read_clk,
     input write_clk,
-    input rst_bus_n,
+    input rst_afifo_n,
 
     // read interface
     input read_valid_in,
@@ -19,14 +19,14 @@ module data_count_aware_async_fifo #(
     output write_ready_out, 
 
     // Report to the fifo arbiter that there is at least 4 data words in the FIFO
-    output read_burst_ready_out
+    // output read_burst_ready_out
 );
 
 // RDC
 logic read_rst_n_sync1, read_rst_n_sync2;
 
-always_ff @(posedge read_clk or negedge rst_bus_n) begin
-    if(~rst_bus_n) begin
+always_ff @(posedge read_clk or negedge rst_afifo_n) begin
+    if(~rst_afifo_n) begin
         read_rst_n_sync1 <= 1'b0;
         read_rst_n_sync2 <= 1'b0;
     end
@@ -37,8 +37,8 @@ always_ff @(posedge read_clk or negedge rst_bus_n) begin
 end
 
 (* async_reg = "true" *) logic write_rst_n_sync1, write_rst_n_sync2;
-always_ff @(posedge write_clk or negedge rst_bus_n) begin
-    if(~rst_bus_n) begin
+always_ff @(posedge write_clk or negedge rst_afifo_n) begin
+    if(~rst_afifo_n) begin
         write_rst_n_sync1 <= 1'b0;
         write_rst_n_sync2 <= 1'b0;
     end
@@ -112,7 +112,7 @@ assign read_data_out   = FIFO[read_bin_ptr];
 assign read_ready_out  = ~FIFO_EMPTY;
 assign write_ready_out = ~FIFO_FULL;
 
-
+/*
 // Driving read_burst_ready_out
 // transform the read-synced write gray pointer (write_gray_ptr_sync2) to binary
 logic [$clog2(FIFO_DEPTH):0] write_bin_ptr_sync2;
@@ -134,6 +134,7 @@ always_ff @(posedge read_clk or negedge read_rst_n_sync2) begin
 end
 
 assign read_burst_ready_out = (data_count >= 'd4);
+*/
 
 endmodule
 

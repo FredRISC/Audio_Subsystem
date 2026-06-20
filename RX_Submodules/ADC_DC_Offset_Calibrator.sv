@@ -1,15 +1,16 @@
 // ADC DC Offset Calibration FSM
 module ADC_DC_Offset_Calibrator #(
-    parameter NUMBER_OF_SAMPLE = 16
+    parameter NUMBER_OF_SAMPLE = 16,
+    parameter IS2_WORD_LENGTH = 16
 ) (
     input clk,
     input rst_n,
     input start_cal,
-    input signed [15:0] adc_data_in,
+    input signed [IS2_WORD_LENGTH-1:0] adc_data_in,
     input adc_data_valid_in,
     output logic adc_mux_gnd,
     output logic cal_done,
-    output signed [15:0] calibrated_data_out,
+    output signed [IS2_WORD_LENGTH-1:0] calibrated_data_out,
     output calibrated_data_valid_out
 );
 
@@ -37,7 +38,7 @@ always_comb begin
 
         ACCUMULATE: begin
             adc_mux_gnd = 1'b1; // Moore FSM, so output depends only on current state (glitch free)
-            if(sample_counter == 15 && adc_data_valid_in) begin // Suppose ADC output adc_data_valid_in only when adc_mux_gnd is asserted on its clock edge
+            if(sample_counter == NUMBER_OF_SAMPLE-1 && adc_data_valid_in) begin // Suppose ADC output adc_data_valid_in only when adc_mux_gnd is asserted on its clock edge
                 next_state = DIVIDE;
             end
         end
@@ -53,9 +54,9 @@ always_comb begin
     endcase
 end
 
-logic signed [15:0] offset_reg;  // Register that holds the calculated average DC offset value
+logic signed [IS2_WORD_LENGTH-1:0] offset_reg;  // Register that holds the calculated average DC offset value
 logic signed [19:0] accumulator; 
-assign offset_reg = accumulator[15:0];
+assign offset_reg = accumulator[IS2_WORD_LENGTH-1:0];
 
 always_ff @(posedge clk or negedge rst_n) begin
     if(~rst_n) begin

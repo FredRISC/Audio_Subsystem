@@ -5,7 +5,6 @@ This is because chip noweadays (like ARM Cortex-M, DSP, DMA, register) often hav
 and that the design will be compatible with a wider range of audio formats (like 24-bit or 32-bit audio) without needing to change the deserializer logic. 
 */
 module I2S_Deserializer #(
-    parameter SYSTEM_BUS_WIDTH = 32,
     parameter WORD_LENGTH = 16
 )( 
     // ADC to DSP interface - I2S receiver
@@ -14,12 +13,11 @@ module I2S_Deserializer #(
     input i2s_ws,                           // word select, left channel when ws=0, right channel when ws=1
     input i2s_sdata,                        // serial data input
 
-    output logic [SYSTEM_BUS_WIDTH-1:0] left_channel_data,  // even though WORD_LENGTH is 16, we pad zeros to fill 32-bit slot for better compatibility with wider audio formats and efficient bus utilization
+    output logic [WORD_LENGTH-1:0] left_channel_data,  // even though WORD_LENGTH is 16, we pad zeros to fill 32-bit slot for better compatibility with wider audio formats and efficient bus utilization
     output logic left_valid,
-    output logic [SYSTEM_BUS_WIDTH-1:0] right_channel_data, 
+    output logic [WORD_LENGTH-1:0] right_channel_data, 
     output logic right_valid
 );
-localparam ZERO_PADDING = SYSTEM_BUS_WIDTH - WORD_LENGTH;
 
 typedef enum logic {
     IDLE,
@@ -48,8 +46,6 @@ end
 
 logic [WORD_LENGTH-1:0] channel_word_length_out;
 logic channel_ready_flag;
-logic [SYSTEM_BUS_WIDTH-1:0] channel_system_bus_width_out;
-assign channel_system_bus_width_out = {(ZERO_PADDING){1'b0}, channel_word_length_out};
 always_ff @(posedge i2s_bclk or negedge rst_n) begin
     if(~rst_n) begin
         state <= IDLE;
@@ -77,11 +73,11 @@ always_ff @(posedge i2s_bclk or negedge rst_n) begin
 
         if(channel_ready_flag) begin
             if(latched_ws) begin
-                right_channel_data <= channel_system_bus_width_out;
+                right_channel_data <= channel_word_length_out;
                 right_valid <= 1'b1;
             end
             else begin
-                left_channel_data <= channel_system_bus_width_out;
+                left_channel_data <= channel_word_length_out;
                 left_valid <= 1'b1;
             end
         end

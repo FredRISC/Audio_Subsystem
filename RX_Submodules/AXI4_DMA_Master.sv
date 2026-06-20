@@ -57,10 +57,12 @@ module AXI4_DMA_Master #(
 )(
     input sys_clk,
     input rst_core_n,
-    input logic [NUM_OF_ADCs-1:0] read_burst_ready_in, // from each fifos to arbiter
-    input logic [NUM_OF_ADCs-1:0] fifo_read_ready_in,  // read_ready
-    output logic [NUM_OF_ADCs-1:0] fifo_read_valid_out, // read_valid
-    input logic [DMA_DATA_WIDTH-1:0] fifo_read_data_in [NUM_OF_ADCs-1:0],
+    
+    // FIFO interface
+    output logic [NUM_OF_ADCs-1:0] fifo_read_valid_out,                    // read_valid
+    input  logic [NUM_OF_ADCs-1:0] read_burst_ready_in,                    // from each fifos to arbiter
+    input  logic [NUM_OF_ADCs-1:0] fifo_read_ready_in,                     // read_ready
+    input  logic [DMA_DATA_WIDTH-1:0] fifo_read_data_in [NUM_OF_ADCs-1:0],
 
     // AXI4 Master interface
     // AW channel
@@ -89,25 +91,12 @@ module AXI4_DMA_Master #(
     input ERR_release
 );
 
-logic rst_n_sync1, rst_n_sync2;
-always_ff @(posedge sys_clk or negedge rst_core_n) begin
-    if(~rst_core_n) begin // async asssetion controlled global reset
-        rst_n_sync1 <= 1'b0;
-        rst_n_sync2 <= 1'b0;
-    end
-    else begin // 2ff-synchronizer syncing the deassertion to sys_clk
-        rst_n_sync1 <= 1'b1;
-        rst_n_sync2 <= rst_n_sync1;
-    end
-end
-
-
 // FIFO Arbiter
 logic fifo_grant_valid, fifo_grant_ready;
 logic [$clog2(NUM_OF_ADCs)-1:0] fifo_grant_id;
 fifo_arbiter arbiter(
     .sys_clk(sys_clk),
-    .rst_dma_n(rst_n_sync2),
+    .rst_dma_n(rst_core_n),
     .read_burst_ready_in(read_burst_ready_in),
     .fifo_grant_valid(fifo_grant_valid),
     .fifo_grant_ready(fifo_grant_ready),
@@ -176,8 +165,8 @@ end
 
 logic [29:0] waddr_ptr [NUM_OF_ADCs-1:0]; // RAM write address of each calibrated ADC data
 
-always_ff @(posedge sys_clk or negedge rst_n_sync2) begin : STATE
-    if(~rst_n_sync2) begin
+always_ff @(posedge sys_clk or negedge rst_core_n) begin : STATE
+    if(~rst_core_n) begin
         state <= DMA_IDLE;
         axi_counter <= '0;
         AWVALID <= 1'b0;
