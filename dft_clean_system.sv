@@ -35,7 +35,7 @@ module dft_clean_module (
     // =========================================================================
     // 2. Addressable Memory Cell & Isolation (Managed by RTL Engineer)
     // =========================================================================
-    wire mem_q;
+    wire mem_q; 
     
     MOCK_ADDRESSABLE_RAM u_ram (
         .CLK  (clk),
