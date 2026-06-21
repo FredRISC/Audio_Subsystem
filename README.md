@@ -1,6 +1,6 @@
 # Audio SoC — Multi-Channel ADC RX Subsystem with Inline DSP
 
-A synthesizable SystemVerilog Audio SoC subsystem that captures, calibrates, filters, and DMA-transfers multi-channel I2S audio data to external memory over AXI4.
+An audio SoC subsystem that captures, calibrates, filters, and DMA-transfers multi-channel I2S audio data to external memory over AXI4.
 
 ## Architecture
 
@@ -58,7 +58,7 @@ A synthesizable SystemVerilog Audio SoC subsystem that captures, calibrates, fil
 
 ## Key Design Decisions
 
-- **Inline DSP over DMA round-trip**: Biquad filters run inline between the CDC FIFO and the DMA output FIFO. At 48 kHz audio sample rates and 100 MHz `sys_clk`, each biquad has ~2000 clock cycles of headroom per sample. This avoids a memory round-trip and is the standard approach for fixed-function audio DSP (Cirrus Logic, TI, ADI codec architectures).
+- **Inline DSP over DMA round-trip**: Biquad filters run inline between the CDC FIFO and the DMA output FIFO. At 48 kHz audio sample rates and 100 MHz `sys_clk`, each biquad has ~2000 clock cycles of headroom per sample. This avoids a memory round-trip and is a standard approach for fixed-function audio DSP.
 
 - **Dual-channel biquad state**: Left and right channels share one biquad pipeline by alternating `channel_sel` on each sample. Per-channel IIR history registers (`left_x1`, `right_y1`, etc.) prevent cross-channel contamination without duplicating hardware.
 
