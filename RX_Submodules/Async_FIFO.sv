@@ -1,141 +1,96 @@
 `timescale 1ns/1ps
 
+// Async FIFO with separate read/write domain resets and Gray-code pointer CDC.
+// Uses distributed RAM (FWFT read). FIFO_DEPTH must be a power of 2.
 module Async_FIFO #(
-    parameter DATA_WIDTH = 16,  // 16-bit data
-    parameter FIFO_DEPTH = 16
-)
-(
-    input read_clk,
-    input write_clk,
-    input rst_afifo_n,
+    parameter DATA_WIDTH = 16,
+    parameter FIFO_DEPTH = 32
+)(
+    input  read_clk,
+    input  write_clk,
+    input  rst_rd_n,        // Reset synchronized to read_clk domain
+    input  rst_wr_n,        // Reset synchronized to write_clk domain
 
-    // read interface
-    input read_valid_in,
-    output read_ready_out,
-    output [DATA_WIDTH-1:0] read_data_out,
-    // write interface
-    input write_valid_in,
-    input [DATA_WIDTH-1:0] write_data_in,
-    output write_ready_out, 
+    // Read interface (FWFT)
+    input  logic read_valid_in,
+    output logic read_ready_out,
+    output logic [DATA_WIDTH-1:0] read_data_out,
 
-    // Report to the fifo arbiter that there is at least 4 data words in the FIFO
-    // output read_burst_ready_out
+    // Write interface
+    input  logic write_valid_in,
+    input  logic [DATA_WIDTH-1:0] write_data_in,
+    output logic write_ready_out
 );
 
-// RDC
-logic read_rst_n_sync1, read_rst_n_sync2;
+    localparam PTR_WIDTH = $clog2(FIFO_DEPTH);
 
-always_ff @(posedge read_clk or negedge rst_afifo_n) begin
-    if(~rst_afifo_n) begin
-        read_rst_n_sync1 <= 1'b0;
-        read_rst_n_sync2 <= 1'b0;
-    end
-    else begin
-        read_rst_n_sync1 <= 1'b1;
-        read_rst_n_sync2 <= read_rst_n_sync1;
-    end
-end
+    // Internal FIFO memory
+    logic [DATA_WIDTH-1:0] mem [FIFO_DEPTH-1:0];
 
-(* async_reg = "true" *) logic write_rst_n_sync1, write_rst_n_sync2;
-always_ff @(posedge write_clk or negedge rst_afifo_n) begin
-    if(~rst_afifo_n) begin
-        write_rst_n_sync1 <= 1'b0;
-        write_rst_n_sync2 <= 1'b0;
-    end
-    else begin
-        write_rst_n_sync1 <= 1'b1;
-        write_rst_n_sync2 <= write_rst_n_sync1;
-    end
-end
+    // Binary and Gray-code pointers (extra MSB for full/empty detection)
+    logic [PTR_WIDTH:0] rd_bin, wr_bin;
+    logic [PTR_WIDTH:0] rd_gray, wr_gray;
+    assign rd_gray = rd_bin ^ (rd_bin >> 1);
+    assign wr_gray = wr_bin ^ (wr_bin >> 1);
 
+    // Synchronized Gray-code pointers
+    (* async_reg = "true" *) logic [PTR_WIDTH:0] wr_gray_sync1, wr_gray_sync2;
+    (* async_reg = "true" *) logic [PTR_WIDTH:0] rd_gray_sync1, rd_gray_sync2;
 
-logic [DATA_WIDTH-1:0] FIFO [FIFO_DEPTH-1:0];
-logic [$clog2(FIFO_DEPTH):0] read_bin_ptr, write_bin_ptr, read_gray_ptr, write_gray_ptr;
+    // Full / Empty flags
+    logic full, empty;
+    assign full  = (rd_gray_sync2 == {~wr_gray[PTR_WIDTH:PTR_WIDTH-1],
+                                        wr_gray[PTR_WIDTH-2:0]});
+    assign empty = (wr_gray_sync2 == rd_gray);
 
-assign read_gray_ptr = read_bin_ptr ^ (read_bin_ptr >> 1);      // to be sycned to write_clk
-assign write_gray_ptr = write_bin_ptr ^ (write_bin_ptr >> 1);   // to be sycned to read_clk
+    // Handshake signals
+    logic rd_handshake, wr_handshake;
+    assign rd_handshake = read_valid_in  && read_ready_out;
+    assign wr_handshake = write_valid_in && write_ready_out;
 
-(* async_reg = "true" *)  logic [$clog2(FIFO_DEPTH):0] read_gray_ptr_sync1, read_gray_ptr_sync2, write_gray_ptr_sync1, write_gray_ptr_sync2;
-logic FIFO_FULL, FIFO_EMPTY;
-assign FIFO_FULL = (read_gray_ptr_sync2 == {~write_gray_ptr[$clog2(FIFO_DEPTH):$clog2(FIFO_DEPTH)-1], write_gray_ptr[$clog2(FIFO_DEPTH)-2:0]});
-assign FIFO_EMPTY = (write_gray_ptr_sync2 == read_gray_ptr); 
-
-// Sync the gray pointers
-always_ff @(posedge read_clk or negedge read_rst_n_sync2) begin
-    if(~read_rst_n_sync2) begin
-        write_gray_ptr_sync1 <= 'd0;
-        write_gray_ptr_sync2 <= 'd0;
+    // ---- Write domain ----
+    always_ff @(posedge write_clk or negedge rst_wr_n) begin
+        if (~rst_wr_n)
+            wr_bin <= '0;
+        else if (wr_handshake) begin
+            mem[wr_bin[PTR_WIDTH-1:0]] <= write_data_in;
+            wr_bin <= wr_bin + 1;
+        end
     end
-    else begin
-        write_gray_ptr_sync1 <= write_gray_ptr;
-        write_gray_ptr_sync2 <= write_gray_ptr_sync1;
-    end
-end
 
-always_ff @(posedge write_clk or negedge write_rst_n_sync2) begin
-    if(~write_rst_n_sync2) begin
-        read_gray_ptr_sync1 <= 'd0;
-        read_gray_ptr_sync2 <= 'd0;
+    // Sync read Gray pointer into write domain
+    always_ff @(posedge write_clk or negedge rst_wr_n) begin
+        if (~rst_wr_n) begin
+            rd_gray_sync1 <= '0;
+            rd_gray_sync2 <= '0;
+        end else begin
+            rd_gray_sync1 <= rd_gray;
+            rd_gray_sync2 <= rd_gray_sync1;
+        end
     end
-    else begin
-        read_gray_ptr_sync1 <= read_gray_ptr;
-        read_gray_ptr_sync2 <= read_gray_ptr_sync1;
-    end
-end
 
-logic fifo_read_handshake, write_handshake;
-assign fifo_read_handshake = read_valid_in && read_ready_out;
-assign write_handshake = write_valid_in && write_ready_out;
+    // ---- Read domain ----
+    always_ff @(posedge read_clk or negedge rst_rd_n) begin
+        if (~rst_rd_n)
+            rd_bin <= '0;
+        else if (rd_handshake)
+            rd_bin <= rd_bin + 1;
+    end
 
-always_ff @(posedge read_clk or negedge read_rst_n_sync2) begin
-    if(~read_rst_n_sync2) begin
-        read_bin_ptr <= '0;
+    // Sync write Gray pointer into read domain
+    always_ff @(posedge read_clk or negedge rst_rd_n) begin
+        if (~rst_rd_n) begin
+            wr_gray_sync1 <= '0;
+            wr_gray_sync2 <= '0;
+        end else begin
+            wr_gray_sync1 <= wr_gray;
+            wr_gray_sync2 <= wr_gray_sync1;
+        end
     end
-    else if(fifo_read_handshake) begin
-        read_bin_ptr <= read_bin_ptr + 1;
-    end
-end
 
-always_ff @(posedge write_clk or negedge write_rst_n_sync2) begin
-    if(~write_rst_n_sync2) begin
-        write_bin_ptr <= '0;
-    end
-    else if(write_handshake) begin
-        FIFO[write_bin_ptr] <= write_data_in;
-        write_bin_ptr <= write_bin_ptr + 1;
-    end
-end
-
-
-// Driving output ports
-assign read_data_out   = FIFO[read_bin_ptr];
-assign read_ready_out  = ~FIFO_EMPTY;
-assign write_ready_out = ~FIFO_FULL;
-
-/*
-// Driving read_burst_ready_out
-// transform the read-synced write gray pointer (write_gray_ptr_sync2) to binary
-logic [$clog2(FIFO_DEPTH):0] write_bin_ptr_sync2;
-logic [$clog2(FIFO_DEPTH):0] data_count;
-always_comb begin
-    write_bin_ptr_sync2 = 'd0;
-    write_bin_ptr_sync2[$clog2(FIFO_DEPTH)] = write_gray_ptr_sync2[$clog2(FIFO_DEPTH)];
-    for(int i = $clog2(FIFO_DEPTH)-1; i >= 0; i--) begin // Ignore the critical path problem
-        write_bin_ptr_sync2[i] = write_bin_ptr_sync2[i+1] ^ write_gray_ptr_sync2[i];
-    end
-end
-always_ff @(posedge read_clk or negedge read_rst_n_sync2) begin
-    if(~read_rst_n_sync2) begin
-        data_count <= 'd0;
-    end
-    else begin
-        data_count <= write_bin_ptr_sync2 - read_bin_ptr;
-    end
-end
-
-assign read_burst_ready_out = (data_count >= 'd4);
-*/
+    // Output assignments (FWFT — data available combinationally)
+    assign read_data_out  = mem[rd_bin[PTR_WIDTH-1:0]];
+    assign read_ready_out = ~empty;
+    assign write_ready_out = ~full;
 
 endmodule
-
-

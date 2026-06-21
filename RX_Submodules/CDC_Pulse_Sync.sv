@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module CDC_Pulse_Sync(
     input clkA,
     input clkB,

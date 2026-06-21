@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 // This is to ensure the priorities of activation, each submodule need to ensure its reset is synced to its clock domain 
 module Reset_Sequencer (
     input  logic pll_clk,        

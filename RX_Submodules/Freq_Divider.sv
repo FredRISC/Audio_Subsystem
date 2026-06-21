@@ -1,3 +1,5 @@
+`timescale 1ns/1ps
+
 module Freq_Divider #(
     parameter N = 5
 ) (

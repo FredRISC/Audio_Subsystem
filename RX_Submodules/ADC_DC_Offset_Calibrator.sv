@@ -1,101 +1,79 @@
-// ADC DC Offset Calibration FSM
+`timescale 1ns/1ps
+
+// ADC DC Offset Calibration — Moore FSM that averages NUMBER_OF_SAMPLE
+// ground-shorted readings, then subtracts the result from live data.
 module ADC_DC_Offset_Calibrator #(
     parameter NUMBER_OF_SAMPLE = 16,
-    parameter IS2_WORD_LENGTH = 16
-) (
-    input clk,
-    input rst_n,
-    input start_cal,
-    input signed [IS2_WORD_LENGTH-1:0] adc_data_in,
-    input adc_data_valid_in,
-    output logic adc_mux_gnd,
-    output logic cal_done,
-    output signed [IS2_WORD_LENGTH-1:0] calibrated_data_out,
-    output calibrated_data_valid_out
+    parameter DATA_WIDTH       = 16
+)(
+    input  clk,
+    input  rst_n,
+    input  start_cal,
+    input  signed [DATA_WIDTH-1:0] adc_data_in,
+    input  adc_data_valid_in,
+    output logic  adc_mux_gnd,
+    output logic  cal_done,
+    output logic signed [DATA_WIDTH-1:0] calibrated_data_out,
+    output logic  calibrated_data_valid_out
 );
 
-typedef enum logic[1:0] {
-    IDLE,           // Wait for a start_cal signal.
-    ACCUMULATE,     // Tell the ADC to ground its inputs (assert adc_mux_gnd = 1). Then, capture and add together exactly 16 samples from the ADC (adc_data_in).
-    DIVIDE,         // Divide the accumulated sum by 16 to find the average DC offset. (In digital logic, dividing by 16 is just a bit-shift!).
-    APPLY           // Store this average in a register (offset_reg), de-assert adc_mux_gnd, and assert a cal_done flag. Return to IDLE.
-} FSM_t;
-FSM_t FSM_inst;
+    localparam CNT_W = $clog2(NUMBER_OF_SAMPLE);
+    localparam ACC_W = DATA_WIDTH + CNT_W;  // accumulator width
 
-FSM_t state, next_state;
-logic [3:0] sample_counter;
-always_comb begin
-    next_state  = state;
-    adc_mux_gnd = 1'b0;
-    cal_done    = 1'b0;             
+    typedef enum logic [1:0] { IDLE, ACCUMULATE, DIVIDE, APPLY } state_t;
+    state_t state, next_state;
 
-    case(state)
-        IDLE: begin
-            if(start_cal) begin
-                next_state = ACCUMULATE;
-            end
-        end
+    logic [CNT_W-1:0]         sample_cnt;
+    logic signed [ACC_W-1:0]  accumulator;
+    logic signed [DATA_WIDTH-1:0] offset_reg;
 
-        ACCUMULATE: begin
-            adc_mux_gnd = 1'b1; // Moore FSM, so output depends only on current state (glitch free)
-            if(sample_counter == NUMBER_OF_SAMPLE-1 && adc_data_valid_in) begin // Suppose ADC output adc_data_valid_in only when adc_mux_gnd is asserted on its clock edge
-                next_state = DIVIDE;
-            end
-        end
-
-        DIVIDE: begin
-            // only stay for only cycle, since dividing the accumulator by 16 simply means right shifting 4 bits, which can be finished efficiently in a cycle
-            next_state = APPLY;
-        end
-
-        APPLY: begin
-            cal_done = 1'b1;   
-        end
-    endcase
-end
-
-logic signed [IS2_WORD_LENGTH-1:0] offset_reg;  // Register that holds the calculated average DC offset value
-logic signed [19:0] accumulator; 
-assign offset_reg = accumulator[IS2_WORD_LENGTH-1:0];
-
-always_ff @(posedge clk or negedge rst_n) begin
-    if(~rst_n) begin
-        state <= IDLE;
-        sample_counter <= '0;
-        accumulator <= '0;
-        offset_reg <= '0;
-        calibrated_data_valid_out <= 1'b0;
-    end
-    else begin
-        state <= next_state;
-        calibrated_data_valid_out <= 1'b0;
-
-        case(state)
-        
-            IDLE: begin
-                accumulator <= '0;
-            end
-
+    // Next-state & Moore outputs
+    always_comb begin
+        next_state  = state;
+        adc_mux_gnd = 1'b0;
+        cal_done    = 1'b0;
+        case (state)
+            IDLE:       if (start_cal) next_state = ACCUMULATE;
             ACCUMULATE: begin
-                if(adc_data_valid_in) begin
-                    sample_counter <= sample_counter + 'd1;   // saturate and go to zero again after hitting the 16th sample
-                    accumulator <= accumulator + adc_data_in;
-                end 
+                adc_mux_gnd = 1'b1;
+                if (sample_cnt == CNT_W'(NUMBER_OF_SAMPLE - 1) && adc_data_valid_in)
+                    next_state = DIVIDE;
             end
-            
-            DIVIDE: begin
-                accumulator <= (accumulator >>> $clog2(NUMBER_OF_SAMPLE)); // divided by 16 
-            end
-            
-            APPLY: begin // cal_done = 1, offset_reg is ready
-                if(adc_data_valid_in) begin
-                    calibrated_data_out <= adc_data_in - offset_reg;
-                    calibrated_data_valid_out <= 1'b1;
-                end
-            end
-
+            DIVIDE:     next_state = APPLY;
+            APPLY:      cal_done = 1'b1;
         endcase
     end
-end
+
+    always_ff @(posedge clk or negedge rst_n) begin
+        if (~rst_n) begin
+            state                   <= IDLE;
+            sample_cnt              <= '0;
+            accumulator             <= '0;
+            offset_reg              <= '0;
+            calibrated_data_valid_out <= 1'b0;
+        end else begin
+            state                   <= next_state;
+            calibrated_data_valid_out <= 1'b0;
+
+            case (state)
+                IDLE: accumulator <= '0;
+
+                ACCUMULATE:
+                    if (adc_data_valid_in) begin
+                        sample_cnt  <= sample_cnt + 1'd1;
+                        accumulator <= accumulator + adc_data_in;
+                    end
+
+                DIVIDE:
+                    offset_reg <= DATA_WIDTH'(accumulator >>> CNT_W);
+
+                APPLY:
+                    if (adc_data_valid_in) begin
+                        calibrated_data_out       <= adc_data_in - offset_reg;
+                        calibrated_data_valid_out <= 1'b1;
+                    end
+            endcase
+        end
+    end
 
 endmodule
